@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8080:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - API_PORT=5000
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POLL_INTERVAL=1
+      - TASK_TIMEOUT=300
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+volumes:
+  redis_data:
