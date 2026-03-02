@@ -14,6 +14,9 @@ A distributed task scheduling system built with Python, Redis, and Docker. Submi
 - **Timeout recovery** — tasks that stall get reclaimed and re-queued
 - **Prometheus metrics** at `/metrics` — queue depth, throughput, task duration histogram
 - **Web dashboard** — submit tasks, watch them process in real time, inspect results, manage the DLQ
+- **API key authentication** — write endpoints require a bearer token; key stored as an env secret, never in code
+- **Rate limiting** — per-IP limits backed by Redis (survives restarts); 30 submissions/min, returns JSON 429 on breach
+- **Payload validation** — size cap (32KB), field count limit, priority range enforcement
 
 ---
 
@@ -60,12 +63,49 @@ docker-compose up --scale worker=10
 
 ---
 
+## Security
+
+### Authentication
+Write endpoints require an API key passed as a bearer token:
+
+```bash
+Authorization: Bearer <your-api-key>
+```
+
+Read endpoints (`GET /tasks/:id`, `/stats`, `/health`, `/metrics`) are public. The dashboard handles auth automatically — the key is injected server-side and never exposed in HTML source.
+
+Set the key via environment variable:
+```bash
+export API_KEY=your-secret-key           # local
+flyctl secrets set API_KEY=your-key      # Fly.io
+```
+
+### Rate limits (per IP, stored in Redis)
+
+| Endpoint | Limit |
+|----------|-------|
+| `POST /tasks` | 30/min, 5/sec |
+| `POST /tasks/:id/retry` | 20/min |
+| `GET /tasks/:id` | 120/min |
+| `GET /tasks/dead` | 60/min |
+
+Exceeding a limit returns `429 Too Many Requests` with a JSON error body.
+
+### Other protections
+- **Payload size cap** — requests over 32KB are rejected with 413
+- **Field count limit** — payloads with more than 20 fields are rejected
+- **Priority range enforcement** — priority must be 0–100
+- **Structured request logging** — every write attempt logs IP, method, path, and status code
+
+---
+
 ## API
 
 ### Submit a task
 ```bash
 curl -X POST http://localhost:8080/tasks \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-api-key>" \
   -d '{"payload": {"task_type": "math", "operation": "add", "a": 5, "b": 3}, "priority": 5}'
 ```
 
@@ -81,7 +121,8 @@ curl http://localhost:8080/tasks/dead
 
 ### Replay a dead task
 ```bash
-curl -X POST http://localhost:8080/tasks/<task_id>/retry
+curl -X POST http://localhost:8080/tasks/<task_id>/retry \
+  -H "Authorization: Bearer <your-api-key>"
 ```
 
 ### Live stats
@@ -122,6 +163,8 @@ curl http://localhost:8080/metrics
 |----------|---------|-------------|
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `API_PORT` | `8080` | API server port |
+| `API_KEY` | *(empty — auth disabled)* | Bearer token required on write endpoints |
+| `MAX_BODY_KB` | `32` | Max request body size in KB |
 | `POLL_INTERVAL` | `1` | Seconds between worker polls |
 | `TASK_TIMEOUT` | `300` | Seconds before a stalled task is reclaimed |
 | `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING / ERROR |
