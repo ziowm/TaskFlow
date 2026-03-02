@@ -282,6 +282,45 @@ def retry_dead_task(task_id):
         return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route('/stats', methods=['GET'])
+def stats():
+    """
+    Return live queue stats from Redis directly.
+    More reliable than Prometheus counters which are per-process.
+    """
+    try:
+        client = redis_client.get_client()
+
+        # Count tasks by status by scanning task keys
+        counts = {s.value: 0 for s in TaskStatus}
+        cursor = 0
+        while True:
+            cursor, keys = client.scan(cursor, match='task:*', count=200)
+            for key in keys:
+                status = client.hget(key, 'status')
+                if status and status in counts:
+                    counts[status] += 1
+            if cursor == 0:
+                break
+
+        return jsonify({
+            'queue_depth': client.zcard('tasks:pending'),
+            'processing':  client.zcard('tasks:processing'),
+            'dlq_depth':   client.zcard('tasks:dead'),
+            'completed':   counts.get('completed', 0),
+            'failed':      counts.get('failed', 0),
+            'dead':        counts.get('dead', 0),
+        }), 200
+
+    except (redis.ConnectionError, redis.TimeoutError) as e:
+        logger.error(f"Redis error in stats: {e}")
+        return jsonify({"error": "Service temporarily unavailable"}), 503
+
+    except Exception as e:
+        logger.error(f"Unexpected error in stats: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
 @app.route('/metrics', methods=['GET'])
 def metrics():
     """Prometheus metrics endpoint"""

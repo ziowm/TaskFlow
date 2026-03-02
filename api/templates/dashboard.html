@@ -264,15 +264,19 @@
 
     .task-row {
       display: grid;
-      grid-template-columns: 90px 1fr 70px 80px;
+      grid-template-columns: 90px 1fr 80px 80px;
       gap: 8px;
       align-items: center;
       padding: 7px 0;
       border-bottom: 1px solid var(--border);
       font-size: 11px;
+      cursor: pointer;
+      transition: background 0.1s;
+      border-radius: 4px;
     }
 
-    .task-row:last-child { border-bottom: none; }
+    .task-row:hover { background: rgba(255,255,255,0.03); }
+    .task-row:last-of-type { border-bottom: none; }
 
     .task-id {
       color: var(--muted);
@@ -300,6 +304,38 @@
     .status-dead       { background: rgba(255,166,87,0.15);  color: var(--orange); }
 
     .task-time { color: var(--muted); font-size: 10px; text-align: right; }
+
+    /* ── Result drawer ── */
+    .task-result {
+      display: none;
+      grid-column: 1 / -1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 2px 0 6px;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .task-result.open { display: block; }
+
+    .result-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+    }
+
+    .result-json {
+      color: var(--green);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .result-error { color: var(--red); white-space: pre-wrap; }
+    .result-pending { color: var(--muted); font-style: italic; }
 
     .empty-state {
       text-align: center;
@@ -415,9 +451,9 @@
       <div class="stat-sub">max retries exceeded</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Retried</div>
-      <div class="stat-value blue" id="stat-retried">—</div>
-      <div class="stat-sub">auto-retried</div>
+      <div class="stat-label">Processing</div>
+      <div class="stat-value blue" id="stat-processing">—</div>
+      <div class="stat-sub">active right now</div>
     </div>
   </div>
 
@@ -458,7 +494,7 @@
         <span class="badge" id="task-count">0</span>
       </div>
       <div class="panel-body" style="padding:0 16px">
-        <div style="display:grid;grid-template-columns:90px 1fr 70px 80px;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px">
+        <div style="display:grid;grid-template-columns:90px 1fr 80px 80px;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px">
           <span>ID</span><span>Type</span><span style="text-align:center">Status</span><span style="text-align:right">Time</span>
         </div>
         <div id="task-log"><div class="empty-state">No tasks yet — submit one →</div></div>
@@ -494,12 +530,12 @@
 </main>
 
 <script>
-  const API = '';  // same origin
+  const API = '';
   let taskIds = [];
-  let metrics = {};
-  let pollTimer;
+  let taskCache = {};      // id → latest task object
+  let openResultId = null; // which row is expanded
 
-  // ── Utilities ──────────────────────────────────────────
+  // ── Utilities ─────────────────────────────────────────
   function ts() {
     return new Date().toLocaleTimeString('en-US', { hour12: false });
   }
@@ -511,7 +547,6 @@
     line.innerHTML = `<span class="log-time">${ts()}</span><span class="log-${type}">${msg}</span>`;
     el.appendChild(line);
     el.scrollTop = el.scrollHeight;
-    // cap at 100 lines
     while (el.children.length > 100) el.removeChild(el.firstChild);
   }
 
@@ -523,7 +558,11 @@
     return `${Math.floor(diff/3600)}h ago`;
   }
 
-  // ── Task type → default payloads ──────────────────────
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Default payloads ─────────────────────────────────
   const defaultPayloads = {
     math:            '{"operation": "add", "a": 5, "b": 3}',
     data_processing: '{"data": [1,2,3,4,5], "operation": "average"}',
@@ -536,7 +575,7 @@
     document.getElementById('task-payload').value = defaultPayloads[this.value] || '{}';
   });
 
-  // ── Health check ──────────────────────────────────────
+  // ── Health ────────────────────────────────────────────
   async function checkHealth() {
     try {
       const r = await fetch(`${API}/health`);
@@ -556,65 +595,93 @@
     }
   }
 
-  // ── Metrics ──────────────────────────────────────────
-  async function fetchMetrics() {
+  // ── Stats (from Redis directly via /stats) ────────────
+  async function fetchStats() {
     try {
-      const r = await fetch(`${API}/metrics`);
-      const text = await r.text();
-      const parse = (name) => {
-        const m = text.match(new RegExp(`^${name}\\{[^}]*\\}\\s+([\\d.]+)`, 'm'))
-                || text.match(new RegExp(`^${name}\\s+([\\d.]+)`, 'm'));
-        return m ? parseFloat(m[1]) : 0;
-      };
-      metrics.queue    = parseFloat((text.match(/taskflow_queue_depth\s+([\d.]+)/) || [,0])[1]);
-      metrics.dlq      = parseFloat((text.match(/taskflow_dlq_depth\s+([\d.]+)/)   || [,0])[1]);
-      metrics.completed= 0; metrics.retried = 0;
-      const counterLines = [...text.matchAll(/taskflow_tasks_total\{status="(\w+)"\}\s+([\d.]+)/g)];
-      counterLines.forEach(([,status,val]) => {
-        if (status === 'completed') metrics.completed = parseFloat(val);
-        if (status === 'retried')   metrics.retried   = parseFloat(val);
-      });
-
-      document.getElementById('stat-queue').textContent     = metrics.queue;
-      document.getElementById('stat-completed').textContent = metrics.completed;
-      document.getElementById('stat-dlq').textContent       = metrics.dlq;
-      document.getElementById('stat-retried').textContent   = metrics.retried;
-    } catch(e) {
-      // silent — metrics endpoint might be waking up
-    }
+      const r = await fetch(`${API}/stats`);
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById('stat-queue').textContent      = d.queue_depth  ?? '—';
+      document.getElementById('stat-completed').textContent  = d.completed    ?? '—';
+      document.getElementById('stat-dlq').textContent        = d.dlq_depth    ?? '—';
+      document.getElementById('stat-processing').textContent = d.processing   ?? '—';
+    } catch {}
   }
 
-  // ── Task polling ─────────────────────────────────────
+  // ── Task polling ──────────────────────────────────────
   async function pollTasks() {
     if (!taskIds.length) return;
-    const fresh = [];
     for (const id of taskIds.slice(-20)) {
       try {
         const r = await fetch(`${API}/tasks/${id}`);
-        if (r.ok) fresh.push(await r.json());
+        if (r.ok) {
+          const t = await r.json();
+          const prev = taskCache[id];
+          // log status transitions
+          if (prev && prev.status !== t.status) {
+            const type = t.status === 'completed' ? 'ok'
+                       : t.status === 'failed'    ? 'err'
+                       : t.status === 'dead'      ? 'warn' : 'info';
+            log(`task ${id.slice(0,8)}… → ${t.status}`, type);
+          }
+          taskCache[id] = t;
+        }
       } catch {}
     }
-    renderTaskLog(fresh.reverse());
+    renderTaskLog();
   }
 
-  function renderTaskLog(tasks) {
+  function renderTaskLog() {
     const el = document.getElementById('task-log');
-    document.getElementById('task-count').textContent = tasks.length;
-    if (!tasks.length) {
+    const ids = taskIds.slice(-20).reverse();
+    document.getElementById('task-count').textContent = ids.length;
+
+    if (!ids.length) {
       el.innerHTML = '<div class="empty-state">No tasks yet — submit one →</div>';
       return;
     }
-    el.innerHTML = tasks.map(t => `
-      <div class="task-row">
-        <span class="task-id" title="${t.task_id}">${t.task_id.slice(0,8)}…</span>
-        <span class="task-type">${t.payload?.task_type || 'default'}</span>
-        <span class="task-status status-${t.status}">${t.status}</span>
-        <span class="task-time">${relTime(t.submitted_at)}</span>
-      </div>
-    `).join('');
+
+    el.innerHTML = ids.map(id => {
+      const t = taskCache[id];
+      if (!t) return '';
+      const isOpen = openResultId === id;
+
+      // Build result drawer content
+      let resultContent = '';
+      if (t.status === 'completed' && t.result) {
+        resultContent = `<div class="result-label">Result</div>
+          <div class="result-json">${escapeHtml(JSON.stringify(t.result, null, 2))}</div>`;
+      } else if (t.status === 'failed' || t.status === 'dead') {
+        resultContent = `<div class="result-label">Error</div>
+          <div class="result-error">${escapeHtml(t.error || 'unknown error')}</div>`;
+      } else {
+        resultContent = `<div class="result-pending">${t.status}…</div>`;
+      }
+
+      return `
+        <div class="task-row" onclick="toggleResult('${id}')">
+          <span class="task-id" title="${t.task_id}">${t.task_id.slice(0,8)}…</span>
+          <span class="task-type">${escapeHtml(t.payload?.task_type || 'default')}</span>
+          <span class="task-status status-${t.status}">${t.status}</span>
+          <span class="task-time">${relTime(t.submitted_at)}</span>
+        </div>
+        <div class="task-result ${isOpen ? 'open' : ''}" id="result-${id}">
+          ${resultContent}
+        </div>
+      `;
+    }).join('');
   }
 
-  // ── DLQ polling ──────────────────────────────────────
+  function toggleResult(id) {
+    if (openResultId === id) {
+      openResultId = null;
+    } else {
+      openResultId = id;
+    }
+    renderTaskLog();
+  }
+
+  // ── DLQ polling ───────────────────────────────────────
   async function pollDLQ() {
     try {
       const r = await fetch(`${API}/tasks/dead`);
@@ -629,7 +696,7 @@
         <div class="dlq-row">
           <div class="dlq-info">
             <div class="dlq-id">${t.task_id.slice(0,16)}…</div>
-            <div class="dlq-error">${t.error || 'unknown error'}</div>
+            <div class="dlq-error">${escapeHtml(t.error || 'unknown error')}</div>
             <div class="dlq-retries">retried ${t.retry_count}/${t.max_retries}x</div>
           </div>
           <button class="btn-sm" onclick="retryTask('${t.task_id}')">retry</button>
@@ -640,8 +707,8 @@
 
   // ── Submit ────────────────────────────────────────────
   async function submitTask() {
-    const type     = document.getElementById('task-type').value;
-    const priority = parseInt(document.getElementById('task-priority').value) || 0;
+    const type      = document.getElementById('task-type').value;
+    const priority  = parseInt(document.getElementById('task-priority').value) || 0;
     const rawPayload = document.getElementById('task-payload').value;
     const resultEl  = document.getElementById('submit-result');
 
@@ -666,12 +733,16 @@
       const d = await r.json();
       if (r.ok) {
         taskIds.push(d.task_id);
+        taskCache[d.task_id] = { task_id: d.task_id, status: 'pending', payload, submitted_at: new Date().toISOString() };
         resultEl.className = 'submit-result ok';
         resultEl.style.display = 'block';
         resultEl.textContent = `✓ queued — ${d.task_id.slice(0,8)}…`;
         log(`submitted ${type} task (priority ${priority}) → ${d.task_id.slice(0,8)}…`, 'ok');
         setTimeout(() => { resultEl.style.display = 'none'; }, 3000);
-        await pollTasks();
+        renderTaskLog();
+        // Poll quickly a few times to catch completion fast
+        setTimeout(pollTasks, 800);
+        setTimeout(pollTasks, 2000);
       } else {
         throw new Error(d.error || 'unknown error');
       }
@@ -689,10 +760,9 @@
       const r = await fetch(`${API}/tasks/${id}/retry`, { method: 'POST' });
       const d = await r.json();
       if (r.ok) {
-        taskIds.push(id);
+        if (!taskIds.includes(id)) taskIds.push(id);
         log(`retried dead task ${id.slice(0,8)}…`, 'warn');
-        await pollDLQ();
-        await pollTasks();
+        await Promise.all([pollDLQ(), pollTasks(), fetchStats()]);
       } else {
         log(`retry failed: ${d.error}`, 'err');
       }
@@ -703,9 +773,8 @@
 
   // ── Tick ──────────────────────────────────────────────
   async function tick() {
-    await Promise.all([checkHealth(), fetchMetrics(), pollTasks(), pollDLQ()]);
-    const label = document.getElementById('refresh-label');
-    label.textContent = `refreshed ${ts()}`;
+    await Promise.all([checkHealth(), fetchStats(), pollTasks(), pollDLQ()]);
+    document.getElementById('refresh-label').textContent = `refreshed ${ts()}`;
   }
 
   // ── Boot ──────────────────────────────────────────────
