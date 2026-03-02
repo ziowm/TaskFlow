@@ -734,12 +734,30 @@ docker-compose up</div>
     </div>
 
     <div class="help-section">
+      <div class="help-section-title">Authentication</div>
+      <div class="help-tip"><span class="help-tip-icon">🔑</span><span>Write endpoints (<code>POST /tasks</code> and <code>POST /tasks/:id/retry</code>) require an API key in the <code>Authorization</code> header. The dashboard handles this automatically.</span></div>
+      <div class="help-task">
+        <div class="help-task-example">Authorization: Bearer &lt;your-api-key&gt;</div>
+      </div>
+      <div class="help-tip" style="margin-top:8px"><span class="help-tip-icon">·</span><span>Read endpoints (<code>GET /tasks</code>, <code>/stats</code>, <code>/health</code>, <code>/metrics</code>) are public — no key needed.</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Rate limits</div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>POST /tasks</code> — 30 requests/min, 5/sec per IP</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>POST /tasks/:id/retry</code> — 20 requests/min per IP</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>GET /tasks/:id</code> — 120 requests/min per IP</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span>Exceeding a limit returns <code>429 Too Many Requests</code></span></div>
+    </div>
+
+    <div class="help-section">
       <div class="help-section-title">Submit a task</div>
       <div class="help-task">
         <div class="help-task-name">POST /tasks</div>
-        <div class="help-task-desc">Queue a new task. Returns a task_id you can poll for status.</div>
+        <div class="help-task-desc">Queue a new task. Returns a task_id you can poll for status. Requires API key. Priority range: 0–100.</div>
         <div class="help-task-example">curl -X POST https://taskflow-api-moiz.fly.dev/tasks \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer &lt;your-api-key&gt;" \
   -d '{
     "payload": {
       "task_type": "math",
@@ -829,10 +847,11 @@ docker-compose up</div>
       <div class="help-task">
         <div class="help-task-example">import requests, time
 
-BASE = "https://taskflow-api-moiz.fly.dev"
+BASE    = "https://taskflow-api-moiz.fly.dev"
+HEADERS = {"Authorization": "Bearer <your-api-key>"}
 
 # Submit
-r = requests.post(f"{BASE}/tasks", json={
+r = requests.post(f"{BASE}/tasks", headers=HEADERS, json={
     "payload": {"task_type": "fibonacci", "n": 20},
     "priority": 5
 })
@@ -851,12 +870,13 @@ while True:
     <div class="help-section">
       <div class="help-section-title">Use from JavaScript</div>
       <div class="help-task">
-        <div class="help-task-example">const BASE = "https://taskflow-api-moiz.fly.dev";
+        <div class="help-task-example">const BASE    = "https://taskflow-api-moiz.fly.dev";
+const API_KEY = "<your-api-key>";
 
 // Submit
 const { task_id } = await fetch(`${BASE}/tasks`, {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
   body: JSON.stringify({
     payload: { task_type: "prime_check", n: 7919 },
     priority: 3
@@ -1028,6 +1048,8 @@ LOG_LEVEL=INFO                     # DEBUG / INFO / WARNING / ERROR</div>
 
 <script>
   const API = '';
+  const API_KEY = '{{ api_key }}';
+  const AUTH = API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {};
   let taskIds = [];
   let taskCache = {};      // id → latest task object
   let openResultId = null; // which row is expanded
@@ -1238,7 +1260,7 @@ LOG_LEVEL=INFO                     # DEBUG / INFO / WARNING / ERROR</div>
     try {
       const r = await fetch(`${API}/tasks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH },
         body: JSON.stringify({ payload, priority }),
       });
       const d = await r.json();
@@ -1268,7 +1290,7 @@ LOG_LEVEL=INFO                     # DEBUG / INFO / WARNING / ERROR</div>
   // ── Retry dead task ───────────────────────────────────
   async function retryTask(id) {
     try {
-      const r = await fetch(`${API}/tasks/${id}/retry`, { method: 'POST' });
+      const r = await fetch(`${API}/tasks/${id}/retry`, { method: 'POST', headers: { ...AUTH } });
       const d = await r.json();
       if (r.ok) {
         if (!taskIds.includes(id)) taskIds.push(id);

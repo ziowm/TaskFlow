@@ -3,79 +3,126 @@ import logging
 import uuid
 from datetime import datetime
 from flask import Flask, request, jsonify, Response, render_template
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from shared.redis_client import RedisClient
 from shared.models import Task, TaskStatus
 from shared.metrics import registry, QUEUE_DEPTH, DLQ_DEPTH
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 import redis
 
-# Initialize Flask app
+# ── App init ──────────────────────────────────────────────────────────────
 app = Flask(__name__)
 
-# Load configuration from environment variables
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
-API_PORT = int(os.getenv('API_PORT', '5000'))
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+# ── Config ────────────────────────────────────────────────────────────────
+REDIS_URL   = os.getenv('REDIS_URL', 'redis://localhost:6379')
+API_PORT    = int(os.getenv('API_PORT', '5000'))
+LOG_LEVEL   = os.getenv('LOG_LEVEL', 'INFO')
+API_KEY     = os.getenv('API_KEY', '')          # empty = auth disabled (dev mode)
+MAX_BODY_KB = int(os.getenv('MAX_BODY_KB', '32'))
+MAX_PRIORITY = 100
+MAX_PAYLOAD_FIELDS = 20
 
-# Set up logging configuration
+# ── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Create Redis client connection with error handling
+# ── Rate limiter ──────────────────────────────────────────────────────────
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],          # no global limit — set per-route
+    storage_uri=REDIS_URL,      # store counters in Redis so limits survive restarts
+)
+
+# ── Redis ─────────────────────────────────────────────────────────────────
 redis_client = RedisClient(REDIS_URL)
 
 try:
     redis_client.connect()
-    logger.info(f"Successfully connected to Redis at {REDIS_URL}")
+    logger.info(f"Connected to Redis at {REDIS_URL}")
 except redis.ConnectionError as e:
-    logger.error(f"Failed to connect to Redis at {REDIS_URL}: {e}")
+    logger.error(f"Failed to connect to Redis: {e}")
     logger.warning("API will start but Redis operations will fail until connection is established")
+
+
+# ── Security helpers ──────────────────────────────────────────────────────
+
+def _check_api_key():
+    """Return a 401 response if API_KEY is set and the request doesn't match."""
+    if not API_KEY:
+        return None  # auth disabled in dev mode
+    auth = request.headers.get('Authorization', '')
+    token = auth.removeprefix('Bearer ').strip()
+    if token != API_KEY:
+        ip = get_remote_address()
+        logger.warning(f"AUTH FAIL  {ip}  {request.method} {request.path}")
+        return jsonify({"error": "Invalid or missing API key"}), 401
+    return None
+
+
+def _check_payload_size():
+    """Reject requests whose body exceeds MAX_BODY_KB."""
+    limit = MAX_BODY_KB * 1024
+    if request.content_length and request.content_length > limit:
+        logger.warning(f"PAYLOAD TOO LARGE  {get_remote_address()}  {request.content_length} bytes")
+        return jsonify({"error": f"Request body too large (max {MAX_BODY_KB}KB)"}), 413
+    return None
+
+
+def _log_request(status: int):
+    """Structured access log for write endpoints."""
+    logger.info(f"REQUEST  {get_remote_address()}  {request.method} {request.path}  {status}")
 
 
 @app.route('/', methods=['GET'])
 def dashboard():
-    """Serve the TaskFlow dashboard"""
-    return render_template('dashboard.html')
+    """Serve the TaskFlow dashboard — inject API key so the UI can auth automatically."""
+    return render_template('dashboard.html', api_key=API_KEY)
 
 
 @app.route('/tasks', methods=['POST'])
+@limiter.limit("30 per minute")
+@limiter.limit("5 per second")
 def submit_task():
-    """
-    Submit a new task to the queue
-    
-    Request Body:
-        {
-            "payload": dict,
-            "priority": int (optional, default: 0)
-        }
-    
-    Returns:
-        201: {"task_id": str, "status": "pending"}
-        400: {"error": str} - validation error
-        503: {"error": str} - Redis connection error
-    """
+    """Submit a new task to the queue."""
+    # Security checks
+    denied = _check_api_key() or _check_payload_size()
+    if denied:
+        _log_request(denied[1])
+        return denied
+
     try:
-        # Get request data
-        data = request.get_json()
-        
-        # Validate request
+        data = request.get_json(silent=True)
+
         if not data:
+            _log_request(400)
             return jsonify({"error": "Request body is required"}), 400
-        
+
         if 'payload' not in data:
+            _log_request(400)
             return jsonify({"error": "Field 'payload' is required"}), 400
-        
+
         if not isinstance(data['payload'], dict):
+            _log_request(400)
             return jsonify({"error": "Field 'payload' must be a dictionary"}), 400
-        
-        # Get priority with default value
+
+        if len(data['payload']) > MAX_PAYLOAD_FIELDS:
+            _log_request(400)
+            return jsonify({"error": f"Payload too many fields (max {MAX_PAYLOAD_FIELDS})"}), 400
+
         priority = data.get('priority', 0)
-        
+
         if not isinstance(priority, int):
+            _log_request(400)
             return jsonify({"error": "Field 'priority' must be an integer"}), 400
+
+        if not (0 <= priority <= MAX_PRIORITY):
+            _log_request(400)
+            return jsonify({"error": f"Priority must be between 0 and {MAX_PRIORITY}"}), 400
         
         # Generate unique task ID
         task_id = str(uuid.uuid4())
@@ -110,8 +157,7 @@ def submit_task():
             client.zadd('tasks:pending', {task_id: score})
             
             logger.info(f"Task {task_id} submitted with priority {priority}")
-            
-            # Return task ID and status with HTTP 201
+            _log_request(201)
             return jsonify({
                 "task_id": task_id,
                 "status": "pending"
@@ -127,6 +173,7 @@ def submit_task():
 
 
 @app.route('/tasks/<task_id>', methods=['GET'])
+@limiter.limit("120 per minute")
 def get_task_status(task_id):
     """
     Get the status of a task
@@ -191,6 +238,7 @@ def get_task_status(task_id):
 
 
 @app.route('/tasks/dead', methods=['GET'])
+@limiter.limit("60 per minute")
 def list_dead_tasks():
     """
     List all tasks in the dead letter queue
@@ -234,6 +282,7 @@ def list_dead_tasks():
 
 
 @app.route('/tasks/<task_id>/retry', methods=['POST'])
+@limiter.limit("20 per minute")
 def retry_dead_task(task_id):
     """
     Re-enqueue a dead task back into the pending queue
@@ -243,6 +292,11 @@ def retry_dead_task(task_id):
         404: Task not found or not in dead state
         503: Redis connection error
     """
+    denied = _check_api_key()
+    if denied:
+        _log_request(denied[1])
+        return denied
+
     try:
         client = redis_client.get_client()
 
@@ -355,6 +409,13 @@ def health_check():
             "status": "unhealthy",
             "redis_connected": False
         }), 503
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    ip = get_remote_address()
+    logger.warning(f"RATE LIMITED  {ip}  {request.method} {request.path}")
+    return jsonify({"error": "Too many requests — slow down", "retry_after": str(e.description)}), 429
 
 
 if __name__ == '__main__':
