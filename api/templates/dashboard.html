@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskFlow</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --orange: #ffa657;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+
+    .logo-icon {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .status-pill .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+    }
+
+    .status-pill.healthy .dot { background: var(--green); animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .refresh-label {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    /* ── Layout ── */
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      gap: 20px;
+    }
+
+    /* ── Stat Cards ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-value.green { color: var(--green); }
+    .stat-value.yellow { color: var(--yellow); }
+    .stat-value.red { color: var(--red); }
+    .stat-value.blue { color: var(--blue); }
+
+    .stat-sub {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Two-column section ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .panel-header .badge {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .panel-body { padding: 16px; }
+
+    /* ── Submit Form ── */
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    select, input[type="number"], textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    select:focus, input:focus, textarea:focus {
+      border-color: var(--blue);
+    }
+
+    textarea { resize: vertical; min-height: 80px; }
+
+    .btn {
+      width: 100%;
+      padding: 9px;
+      background: var(--blue);
+      color: #0d1117;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      letter-spacing: 0.4px;
+    }
+
+    .btn:hover { opacity: 0.85; }
+    .btn:active { opacity: 0.7; }
+
+    .btn-sm {
+      width: auto;
+      padding: 4px 10px;
+      font-size: 11px;
+      background: transparent;
+      color: var(--blue);
+      border: 1px solid var(--blue);
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+
+    .btn-sm:hover { background: rgba(88,166,255,0.1); }
+
+    .submit-result {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      display: none;
+    }
+
+    .submit-result.ok { background: rgba(63,185,80,0.1); border: 1px solid var(--green); color: var(--green); }
+    .submit-result.err { background: rgba(248,81,73,0.1); border: 1px solid var(--red); color: var(--red); }
+
+    /* ── Task Log ── */
+    #task-log {
+      max-height: 340px;
+      overflow-y: auto;
+    }
+
+    .task-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 70px 80px;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+    }
+
+    .task-row:last-child { border-bottom: none; }
+
+    .task-id {
+      color: var(--muted);
+      font-size: 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .task-type { color: var(--text); }
+
+    .task-status {
+      text-align: center;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-pending    { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .status-processing { background: rgba(88,166,255,0.15);  color: var(--blue); }
+    .status-completed  { background: rgba(63,185,80,0.15);   color: var(--green); }
+    .status-failed     { background: rgba(248,81,73,0.15);   color: var(--red); }
+    .status-dead       { background: rgba(255,166,87,0.15);  color: var(--orange); }
+
+    .task-time { color: var(--muted); font-size: 10px; text-align: right; }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 32px 0;
+      font-size: 12px;
+    }
+
+    /* ── DLQ ── */
+    #dlq-list {
+      max-height: 260px;
+      overflow-y: auto;
+    }
+
+    .dlq-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dlq-row:last-child { border-bottom: none; }
+
+    .dlq-info { flex: 1; min-width: 0; }
+
+    .dlq-id {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .dlq-error {
+      font-size: 11px;
+      color: var(--red);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dlq-retries {
+      font-size: 10px;
+      color: var(--orange);
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+
+    /* ── Log section ── */
+    #live-log {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 11px;
+      line-height: 1.8;
+    }
+
+    .log-line { display: flex; gap: 10px; }
+    .log-time { color: var(--muted); flex-shrink: 0; }
+    .log-ok   { color: var(--green); }
+    .log-err  { color: var(--red); }
+    .log-info { color: var(--blue); }
+    .log-warn { color: var(--yellow); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 800px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .two-col   { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    TaskFlow
+  </div>
+  <div class="header-right">
+    <div class="status-pill" id="health-pill">
+      <span class="dot"></span>
+      <span id="health-text">connecting...</span>
+    </div>
+    <span class="refresh-label" id="refresh-label">—</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Queue Depth</div>
+      <div class="stat-value yellow" id="stat-queue">—</div>
+      <div class="stat-sub">tasks pending</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Completed</div>
+      <div class="stat-value green" id="stat-completed">—</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Dead Letter</div>
+      <div class="stat-value red" id="stat-dlq">—</div>
+      <div class="stat-sub">max retries exceeded</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Retried</div>
+      <div class="stat-value blue" id="stat-retried">—</div>
+      <div class="stat-sub">auto-retried</div>
+    </div>
+  </div>
+
+  <!-- Submit + Task Log -->
+  <div class="two-col">
+
+    <!-- Submit a task -->
+    <div class="panel">
+      <div class="panel-header">Submit Task</div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label>Task Type</label>
+          <select id="task-type">
+            <option value="math">math</option>
+            <option value="data_processing">data_processing</option>
+            <option value="text_processing">text_processing</option>
+            <option value="error_demo">error_demo</option>
+            <option value="default">default</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Priority (0 = low, 10 = high)</label>
+          <input type="number" id="task-priority" value="1" min="0" max="10" />
+        </div>
+        <div class="form-group">
+          <label>Payload (JSON)</label>
+          <textarea id="task-payload">{"operation": "add", "a": 5, "b": 3}</textarea>
+        </div>
+        <button class="btn" onclick="submitTask()">Submit Task →</button>
+        <div class="submit-result" id="submit-result"></div>
+      </div>
+    </div>
+
+    <!-- Recent tasks -->
+    <div class="panel">
+      <div class="panel-header">
+        Recent Tasks
+        <span class="badge" id="task-count">0</span>
+      </div>
+      <div class="panel-body" style="padding:0 16px">
+        <div style="display:grid;grid-template-columns:90px 1fr 70px 80px;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px">
+          <span>ID</span><span>Type</span><span style="text-align:center">Status</span><span style="text-align:right">Time</span>
+        </div>
+        <div id="task-log"><div class="empty-state">No tasks yet — submit one →</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- DLQ + Live Log -->
+  <div class="two-col">
+
+    <!-- Dead Letter Queue -->
+    <div class="panel">
+      <div class="panel-header">
+        Dead Letter Queue
+        <span class="badge" id="dlq-count">0</span>
+      </div>
+      <div class="panel-body" style="padding:0 16px">
+        <div id="dlq-list"><div class="empty-state">No dead tasks</div></div>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="panel">
+      <div class="panel-header">Activity Log</div>
+      <div class="panel-body" style="padding:0">
+        <div id="live-log"></div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+  const API = '';  // same origin
+  let taskIds = [];
+  let metrics = {};
+  let pollTimer;
+
+  // ── Utilities ──────────────────────────────────────────
+  function ts() {
+    return new Date().toLocaleTimeString('en-US', { hour12: false });
+  }
+
+  function log(msg, type = 'info') {
+    const el = document.getElementById('live-log');
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="log-time">${ts()}</span><span class="log-${type}">${msg}</span>`;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+    // cap at 100 lines
+    while (el.children.length > 100) el.removeChild(el.firstChild);
+  }
+
+  function relTime(iso) {
+    if (!iso) return '—';
+    const diff = Math.floor((Date.now() - new Date(iso + 'Z')) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    return `${Math.floor(diff/3600)}h ago`;
+  }
+
+  // ── Task type → default payloads ──────────────────────
+  const defaultPayloads = {
+    math:            '{"operation": "add", "a": 5, "b": 3}',
+    data_processing: '{"data": [1,2,3,4,5], "operation": "average"}',
+    text_processing: '{"text": "Hello TaskFlow", "operation": "uppercase"}',
+    error_demo:      '{"error_type": "none"}',
+    default:         '{"message": "hello"}',
+  };
+
+  document.getElementById('task-type').addEventListener('change', function() {
+    document.getElementById('task-payload').value = defaultPayloads[this.value] || '{}';
+  });
+
+  // ── Health check ──────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const r = await fetch(`${API}/health`);
+      const d = await r.json();
+      const pill = document.getElementById('health-pill');
+      const txt  = document.getElementById('health-text');
+      if (d.redis_connected) {
+        pill.className = 'status-pill healthy';
+        txt.textContent = 'healthy';
+      } else {
+        pill.className = 'status-pill';
+        txt.textContent = 'redis down';
+      }
+    } catch {
+      document.getElementById('health-pill').className = 'status-pill';
+      document.getElementById('health-text').textContent = 'unreachable';
+    }
+  }
+
+  // ── Metrics ──────────────────────────────────────────
+  async function fetchMetrics() {
+    try {
+      const r = await fetch(`${API}/metrics`);
+      const text = await r.text();
+      const parse = (name) => {
+        const m = text.match(new RegExp(`^${name}\\{[^}]*\\}\\s+([\\d.]+)`, 'm'))
+                || text.match(new RegExp(`^${name}\\s+([\\d.]+)`, 'm'));
+        return m ? parseFloat(m[1]) : 0;
+      };
+      metrics.queue    = parseFloat((text.match(/taskflow_queue_depth\s+([\d.]+)/) || [,0])[1]);
+      metrics.dlq      = parseFloat((text.match(/taskflow_dlq_depth\s+([\d.]+)/)   || [,0])[1]);
+      metrics.completed= 0; metrics.retried = 0;
+      const counterLines = [...text.matchAll(/taskflow_tasks_total\{status="(\w+)"\}\s+([\d.]+)/g)];
+      counterLines.forEach(([,status,val]) => {
+        if (status === 'completed') metrics.completed = parseFloat(val);
+        if (status === 'retried')   metrics.retried   = parseFloat(val);
+      });
+
+      document.getElementById('stat-queue').textContent     = metrics.queue;
+      document.getElementById('stat-completed').textContent = metrics.completed;
+      document.getElementById('stat-dlq').textContent       = metrics.dlq;
+      document.getElementById('stat-retried').textContent   = metrics.retried;
+    } catch(e) {
+      // silent — metrics endpoint might be waking up
+    }
+  }
+
+  // ── Task polling ─────────────────────────────────────
+  async function pollTasks() {
+    if (!taskIds.length) return;
+    const fresh = [];
+    for (const id of taskIds.slice(-20)) {
+      try {
+        const r = await fetch(`${API}/tasks/${id}`);
+        if (r.ok) fresh.push(await r.json());
+      } catch {}
+    }
+    renderTaskLog(fresh.reverse());
+  }
+
+  function renderTaskLog(tasks) {
+    const el = document.getElementById('task-log');
+    document.getElementById('task-count').textContent = tasks.length;
+    if (!tasks.length) {
+      el.innerHTML = '<div class="empty-state">No tasks yet — submit one →</div>';
+      return;
+    }
+    el.innerHTML = tasks.map(t => `
+      <div class="task-row">
+        <span class="task-id" title="${t.task_id}">${t.task_id.slice(0,8)}…</span>
+        <span class="task-type">${t.payload?.task_type || 'default'}</span>
+        <span class="task-status status-${t.status}">${t.status}</span>
+        <span class="task-time">${relTime(t.submitted_at)}</span>
+      </div>
+    `).join('');
+  }
+
+  // ── DLQ polling ──────────────────────────────────────
+  async function pollDLQ() {
+    try {
+      const r = await fetch(`${API}/tasks/dead`);
+      const d = await r.json();
+      const el = document.getElementById('dlq-list');
+      document.getElementById('dlq-count').textContent = d.count;
+      if (!d.tasks.length) {
+        el.innerHTML = '<div class="empty-state">No dead tasks</div>';
+        return;
+      }
+      el.innerHTML = d.tasks.map(t => `
+        <div class="dlq-row">
+          <div class="dlq-info">
+            <div class="dlq-id">${t.task_id.slice(0,16)}…</div>
+            <div class="dlq-error">${t.error || 'unknown error'}</div>
+            <div class="dlq-retries">retried ${t.retry_count}/${t.max_retries}x</div>
+          </div>
+          <button class="btn-sm" onclick="retryTask('${t.task_id}')">retry</button>
+        </div>
+      `).join('');
+    } catch {}
+  }
+
+  // ── Submit ────────────────────────────────────────────
+  async function submitTask() {
+    const type     = document.getElementById('task-type').value;
+    const priority = parseInt(document.getElementById('task-priority').value) || 0;
+    const rawPayload = document.getElementById('task-payload').value;
+    const resultEl  = document.getElementById('submit-result');
+
+    let payload;
+    try {
+      payload = JSON.parse(rawPayload);
+    } catch {
+      resultEl.className = 'submit-result err';
+      resultEl.style.display = 'block';
+      resultEl.textContent = 'Invalid JSON in payload';
+      return;
+    }
+
+    payload.task_type = type;
+
+    try {
+      const r = await fetch(`${API}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload, priority }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        taskIds.push(d.task_id);
+        resultEl.className = 'submit-result ok';
+        resultEl.style.display = 'block';
+        resultEl.textContent = `✓ queued — ${d.task_id.slice(0,8)}…`;
+        log(`submitted ${type} task (priority ${priority}) → ${d.task_id.slice(0,8)}…`, 'ok');
+        setTimeout(() => { resultEl.style.display = 'none'; }, 3000);
+        await pollTasks();
+      } else {
+        throw new Error(d.error || 'unknown error');
+      }
+    } catch(e) {
+      resultEl.className = 'submit-result err';
+      resultEl.style.display = 'block';
+      resultEl.textContent = `✗ ${e.message}`;
+      log(`submit failed: ${e.message}`, 'err');
+    }
+  }
+
+  // ── Retry dead task ───────────────────────────────────
+  async function retryTask(id) {
+    try {
+      const r = await fetch(`${API}/tasks/${id}/retry`, { method: 'POST' });
+      const d = await r.json();
+      if (r.ok) {
+        taskIds.push(id);
+        log(`retried dead task ${id.slice(0,8)}…`, 'warn');
+        await pollDLQ();
+        await pollTasks();
+      } else {
+        log(`retry failed: ${d.error}`, 'err');
+      }
+    } catch(e) {
+      log(`retry error: ${e.message}`, 'err');
+    }
+  }
+
+  // ── Tick ──────────────────────────────────────────────
+  async function tick() {
+    await Promise.all([checkHealth(), fetchMetrics(), pollTasks(), pollDLQ()]);
+    const label = document.getElementById('refresh-label');
+    label.textContent = `refreshed ${ts()}`;
+  }
+
+  // ── Boot ──────────────────────────────────────────────
+  log('TaskFlow dashboard initialized', 'info');
+  log('connecting to API...', 'info');
+  tick().then(() => log('connected', 'ok'));
+  setInterval(tick, 4000);
+</script>
+</body>
+</html>

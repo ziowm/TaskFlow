@@ -2,7 +2,7 @@ import os
 import logging
 import uuid
 from datetime import datetime
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template
 from shared.redis_client import RedisClient
 from shared.models import Task, TaskStatus
 from shared.metrics import registry, QUEUE_DEPTH, DLQ_DEPTH
@@ -33,6 +33,12 @@ try:
 except redis.ConnectionError as e:
     logger.error(f"Failed to connect to Redis at {REDIS_URL}: {e}")
     logger.warning("API will start but Redis operations will fail until connection is established")
+
+
+@app.route('/', methods=['GET'])
+def dashboard():
+    """Serve the TaskFlow dashboard"""
+    return render_template('dashboard.html')
 
 
 @app.route('/tasks', methods=['POST'])
