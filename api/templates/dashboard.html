@@ -403,6 +403,145 @@
     .log-info { color: var(--blue); }
     .log-warn { color: var(--yellow); }
 
+    /* ── Help panel ── */
+    .help-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .help-btn:hover, .help-btn.active {
+      color: var(--text);
+      border-color: var(--blue);
+    }
+
+    .help-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      backdrop-filter: blur(2px);
+    }
+
+    .help-overlay.open { display: flex; align-items: flex-start; justify-content: flex-end; }
+
+    .help-drawer {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      width: 480px;
+      max-width: 95vw;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 28px 28px 48px;
+      animation: slideIn 0.2s ease;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(40px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+
+    .help-close {
+      float: right;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+
+    .help-close:hover { color: var(--text); }
+
+    .help-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .help-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+
+    .help-section {
+      margin-bottom: 28px;
+    }
+
+    .help-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--blue);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .help-task {
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .help-task-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .help-task-desc {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+
+    .help-task-example {
+      font-size: 10px;
+      color: var(--green);
+      background: rgba(63,185,80,0.05);
+      border: 1px solid rgba(63,185,80,0.15);
+      border-radius: 4px;
+      padding: 5px 8px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .help-tip {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .help-tip-icon { flex-shrink: 0; color: var(--yellow); }
+
+    .help-link {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 11px;
+    }
+
+    .help-link:hover { text-decoration: underline; }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -428,8 +567,145 @@
       <span id="health-text">connecting...</span>
     </div>
     <span class="refresh-label" id="refresh-label">—</span>
+    <button class="help-btn" id="help-btn" onclick="toggleHelp()">? help</button>
   </div>
 </header>
+
+<!-- Help drawer -->
+<div class="help-overlay" id="help-overlay" onclick="closeHelpOnOverlay(event)">
+  <div class="help-drawer">
+    <button class="help-close" onclick="toggleHelp()">✕</button>
+    <div class="help-title">TaskFlow</div>
+    <div class="help-sub">
+      A distributed task scheduling system. Submit jobs, set priorities, and watch a pool of
+      workers pick them up and process them in real time — with automatic retries and a dead letter queue.
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">How it works</div>
+      <div class="help-tip"><span class="help-tip-icon">①</span><span>You submit a task from the dashboard (or via the API). It enters the priority queue in Redis.</span></div>
+      <div class="help-tip"><span class="help-tip-icon">②</span><span>A worker node picks it up, processes it, and writes the result back. Multiple workers run in parallel.</span></div>
+      <div class="help-tip"><span class="help-tip-icon">③</span><span>If a task fails, it auto-retries up to 3 times. After that it lands in the Dead Letter Queue where you can inspect or replay it.</span></div>
+      <div class="help-tip"><span class="help-tip-icon">④</span><span>Click any row in Recent Tasks to expand and see the full result or error.</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Math tasks</div>
+
+      <div class="help-task">
+        <div class="help-task-name">math</div>
+        <div class="help-task-desc">Basic arithmetic. Operations: add, subtract, multiply, divide, power, modulo, sqrt.</div>
+        <div class="help-task-example">{"operation": "power", "a": 2, "b": 10}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">fibonacci</div>
+        <div class="help-task-desc">Returns the first N Fibonacci numbers. Max n = 500.</div>
+        <div class="help-task-example">{"n": 15}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">prime_check</div>
+        <div class="help-task-desc">Checks if a number is prime. Returns prime factors if it's not.</div>
+        <div class="help-task-example">{"n": 360}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">matrix_multiply</div>
+        <div class="help-task-desc">Multiplies two matrices A × B. Max size 20×20. Columns of A must equal rows of B.</div>
+        <div class="help-task-example">{"a": [[1,2],[3,4]], "b": [[5,6],[7,8]]}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Data tasks</div>
+
+      <div class="help-task">
+        <div class="help-task-name">data_processing</div>
+        <div class="help-task-desc">Runs a statistical operation on a list of numbers. Operations: sum, average, max, min, median, std, range.</div>
+        <div class="help-task-example">{"data": [4,8,15,16,23,42], "operation": "std"}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">sort</div>
+        <div class="help-task-desc">Sorts a list and reports comparison count. Try the same data with all three algorithms to compare. Algorithms: bubble, merge, quick.</div>
+        <div class="help-task-example">{"data": [64,34,25,12,22,11,90], "algorithm": "bubble"}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Text tasks</div>
+
+      <div class="help-task">
+        <div class="help-task-name">text_processing</div>
+        <div class="help-task-desc">Operations: uppercase, lowercase, reverse, word_count, word_frequency, palindrome_check, caesar_cipher (add "shift" field for cipher).</div>
+        <div class="help-task-example">{"text": "racecar", "operation": "palindrome_check"}
+{"text": "Hello", "operation": "caesar_cipher", "shift": 13}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Simulated real-world tasks</div>
+
+      <div class="help-task">
+        <div class="help-task-name">send_email</div>
+        <div class="help-task-desc">Simulates sending an email. No real email is sent — returns a fake message ID. Good for showing async job patterns.</div>
+        <div class="help-task-example">{"to": "user@example.com", "subject": "Done", "body": "Job finished."}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">resize_image</div>
+        <div class="help-task-desc">Simulates an image resize pipeline. Returns original dimensions, new dimensions, format, and estimated file size.</div>
+        <div class="help-task-example">{"filename": "photo.jpg", "width": 1280, "height": 720}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">generate_report</div>
+        <div class="help-task-desc">Generates a fake analytics report. Types: sales, traffic, performance, inventory. Periods: monthly, weekly, daily.</div>
+        <div class="help-task-example">{"report_type": "traffic", "period": "weekly"}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Chaos & testing tasks</div>
+
+      <div class="help-task">
+        <div class="help-task-name">random_fail</div>
+        <div class="help-task-desc">Fails randomly at a given rate. Set fail_rate to 0.8 and submit a few — watch tasks retry and eventually hit the Dead Letter Queue.</div>
+        <div class="help-task-example">{"fail_rate": 0.8}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">slow_task</div>
+        <div class="help-task-desc">Sleeps for N seconds. Lets you watch a task sit in "processing" state on the dashboard. Max 400s (triggers timeout monitor).</div>
+        <div class="help-task-example">{"duration_seconds": 8}</div>
+      </div>
+
+      <div class="help-task">
+        <div class="help-task-name">error_demo</div>
+        <div class="help-task-desc">Triggers a specific error type on demand. Types: none, value_error, runtime_error, timeout, division_by_zero.</div>
+        <div class="help-task-example">{"error_type": "runtime_error"}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Priority system</div>
+      <div class="help-tip"><span class="help-tip-icon">↑</span><span>Higher number = processed first. Tasks with the same priority run in submission order (FIFO).</span></div>
+      <div class="help-tip"><span class="help-tip-icon">→</span><span>Try submitting a priority 1 and a priority 10 task back to back — the 10 will run first even if submitted second.</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">API endpoints</div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>POST /tasks</code> — submit a task</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>GET /tasks/:id</code> — get task status + result</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>GET /tasks/dead</code> — list dead letter queue</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>POST /tasks/:id/retry</code> — replay a dead task</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>GET /stats</code> — live queue counts from Redis</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><code>GET /metrics</code> — Prometheus metrics</span></div>
+      <div class="help-tip"><span class="help-tip-icon">·</span><span><a class="help-link" href="https://github.com/ziowm/TaskFlow" target="_blank">github.com/ziowm/TaskFlow</a> — source code</span></div>
+    </div>
+  </div>
+</div>
 
 <main>
 
@@ -811,6 +1087,26 @@
     await Promise.all([checkHealth(), fetchStats(), pollTasks(), pollDLQ()]);
     document.getElementById('refresh-label').textContent = `refreshed ${ts()}`;
   }
+
+  // ── Help panel ────────────────────────────────────────
+  function toggleHelp() {
+    const overlay = document.getElementById('help-overlay');
+    const btn = document.getElementById('help-btn');
+    const isOpen = overlay.classList.contains('open');
+    overlay.classList.toggle('open', !isOpen);
+    btn.classList.toggle('active', !isOpen);
+  }
+
+  function closeHelpOnOverlay(e) {
+    if (e.target === document.getElementById('help-overlay')) toggleHelp();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const overlay = document.getElementById('help-overlay');
+      if (overlay.classList.contains('open')) toggleHelp();
+    }
+  });
 
   // ── Boot ──────────────────────────────────────────────
   log('TaskFlow dashboard initialized', 'info');
