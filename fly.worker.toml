@@ -1,0 +1,16 @@
+app = "taskflow-worker-moiz"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[env]
+  POLL_INTERVAL = "1"
+  TASK_TIMEOUT = "300"
+  LOG_LEVEL = "INFO"
+
+# No [http_service] — worker has no public port
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

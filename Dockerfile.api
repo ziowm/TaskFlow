@@ -9,5 +9,6 @@ COPY api/ ./api/
 COPY shared/ ./shared/
 
 ENV PYTHONUNBUFFERED=1
+ENV API_PORT=8080
 
 CMD ["python", "-m", "api.server"]

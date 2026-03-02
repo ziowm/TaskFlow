@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.redis_client import RedisClient
 from shared.models import Task, TaskStatus
+from shared.metrics import TASKS_TOTAL, TASK_DURATION
 from worker.timeout_monitor import TimeoutMonitor
 from worker.task_handlers import (
     execute_math_operation,
@@ -215,30 +216,55 @@ class WorkerNode:
             self.logger.info(f"Task {task_id} status updated to processing")
             
             # Execute task handler function with payload
-            result = self.execute_task(task.payload)
-            
+            with TASK_DURATION.time():
+                result = self.execute_task(task.payload)
+
             # On success: update status to "completed", store result, set completed_at timestamp
             completed_at = datetime.utcnow()
             self.redis.hset(f'task:{task_id}', 'status', TaskStatus.COMPLETED.value)
             self.redis.hset(f'task:{task_id}', 'result', json.dumps(result))
             self.redis.hset(f'task:{task_id}', 'completed_at', completed_at.isoformat())
-            
+
             # Remove task from tasks:processing sorted set after completion
             self.redis.zrem('tasks:processing', task_id)
-            
+
+            TASKS_TOTAL.labels(status='completed').inc()
             self.logger.info(f"Task {task_id} completed successfully")
             
         except Exception as e:
-            # On failure: catch exceptions, update status to "failed", store error message
             self.logger.error(f"Task {task_id} failed: {e}", exc_info=True)
-            
+
+            task.retry_count += 1
             completed_at = datetime.utcnow()
-            self.redis.hset(f'task:{task_id}', 'status', TaskStatus.FAILED.value)
-            self.redis.hset(f'task:{task_id}', 'error', str(e))
-            self.redis.hset(f'task:{task_id}', 'completed_at', completed_at.isoformat())
-            
-            # Remove task from tasks:processing sorted set after completion
-            self.redis.zrem('tasks:processing', task_id)
+
+            pipe = self.redis.pipeline()
+            pipe.hset(f'task:{task_id}', 'error', str(e))
+            pipe.hset(f'task:{task_id}', 'retry_count', str(task.retry_count))
+            pipe.zrem('tasks:processing', task_id)
+
+            if task.retry_count <= task.max_retries:
+                # Re-enqueue with original priority
+                self.logger.warning(
+                    f"Task {task_id} failed, retry {task.retry_count}/{task.max_retries}"
+                )
+                timestamp_microseconds = int(task.submitted_at.timestamp() * 1000000) % 1000000
+                score = task.priority * 1000000 + (1000000 - timestamp_microseconds)
+                pipe.hset(f'task:{task_id}', 'status', TaskStatus.PENDING.value)
+                pipe.hset(f'task:{task_id}', 'worker_id', '')
+                pipe.hset(f'task:{task_id}', 'started_at', '')
+                pipe.zadd('tasks:pending', {task_id: score})
+                TASKS_TOTAL.labels(status='retried').inc()
+            else:
+                # Max retries exceeded — move to dead letter queue
+                self.logger.error(
+                    f"Task {task_id} exceeded max retries ({task.max_retries}), moving to DLQ"
+                )
+                pipe.hset(f'task:{task_id}', 'status', TaskStatus.DEAD.value)
+                pipe.hset(f'task:{task_id}', 'completed_at', completed_at.isoformat())
+                pipe.zadd('tasks:dead', {task_id: completed_at.timestamp()})
+                TASKS_TOTAL.labels(status='dead').inc()
+
+            pipe.execute()
             
         finally:
             self.current_task_id = None

@@ -10,6 +10,10 @@ class TaskStatus(Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    DEAD = "dead"
+
+
+DEFAULT_MAX_RETRIES = 3
 
 
 @dataclass
@@ -24,7 +28,9 @@ class Task:
     result: Optional[Any] = None
     error: Optional[str] = None
     worker_id: Optional[str] = None
-    
+    retry_count: int = 0
+    max_retries: int = DEFAULT_MAX_RETRIES
+
     def to_redis_hash(self) -> dict:
         """Convert task to Redis hash format"""
         return {
@@ -37,9 +43,11 @@ class Task:
             'completed_at': self.completed_at.isoformat() if self.completed_at else '',
             'result': json.dumps(self.result) if self.result is not None else '',
             'error': self.error if self.error else '',
-            'worker_id': self.worker_id if self.worker_id else ''
+            'worker_id': self.worker_id if self.worker_id else '',
+            'retry_count': str(self.retry_count),
+            'max_retries': str(self.max_retries),
         }
-    
+
     @classmethod
     def from_redis_hash(cls, data: dict) -> 'Task':
         """Create task from Redis hash data"""
@@ -53,5 +61,7 @@ class Task:
             completed_at=datetime.fromisoformat(data['completed_at']) if data.get('completed_at') else None,
             result=json.loads(data['result']) if data.get('result') else None,
             error=data.get('error') if data.get('error') else None,
-            worker_id=data.get('worker_id') if data.get('worker_id') else None
+            worker_id=data.get('worker_id') if data.get('worker_id') else None,
+            retry_count=int(data.get('retry_count', 0)),
+            max_retries=int(data.get('max_retries', DEFAULT_MAX_RETRIES)),
         )

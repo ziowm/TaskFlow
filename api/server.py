@@ -2,9 +2,11 @@ import os
 import logging
 import uuid
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from shared.redis_client import RedisClient
 from shared.models import Task, TaskStatus
+from shared.metrics import registry, QUEUE_DEPTH, DLQ_DEPTH
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 import redis
 
 # Initialize Flask app
@@ -180,6 +182,110 @@ def get_task_status(task_id):
     except Exception as e:
         logger.error(f"Unexpected error in get_task_status for task {task_id}: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/tasks/dead', methods=['GET'])
+def list_dead_tasks():
+    """
+    List all tasks in the dead letter queue
+
+    Returns:
+        200: {"tasks": [...], "count": int}
+        503: Redis connection error
+    """
+    try:
+        client = redis_client.get_client()
+
+        # Get all dead task IDs ordered by failure time (most recent first)
+        dead_task_ids = client.zrevrange('tasks:dead', 0, -1)
+
+        tasks = []
+        for task_id in dead_task_ids:
+            task_data = client.hgetall(f'task:{task_id}')
+            if not task_data:
+                continue
+            task = Task.from_redis_hash(task_data)
+            tasks.append({
+                'task_id': task.task_id,
+                'status': task.status.value,
+                'priority': task.priority,
+                'retry_count': task.retry_count,
+                'max_retries': task.max_retries,
+                'error': task.error,
+                'submitted_at': task.submitted_at.isoformat(),
+                'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+            })
+
+        return jsonify({'tasks': tasks, 'count': len(tasks)}), 200
+
+    except (redis.ConnectionError, redis.TimeoutError) as e:
+        logger.error(f"Redis connection error in list_dead_tasks: {e}")
+        return jsonify({"error": "Service temporarily unavailable"}), 503
+
+    except Exception as e:
+        logger.error(f"Unexpected error in list_dead_tasks: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/tasks/<task_id>/retry', methods=['POST'])
+def retry_dead_task(task_id):
+    """
+    Re-enqueue a dead task back into the pending queue
+
+    Returns:
+        200: {"task_id": str, "status": "pending"}
+        404: Task not found or not in dead state
+        503: Redis connection error
+    """
+    try:
+        client = redis_client.get_client()
+
+        task_data = client.hgetall(f'task:{task_id}')
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        task = Task.from_redis_hash(task_data)
+
+        if task.status.value != 'dead':
+            return jsonify({"error": f"Task is not in dead state (current: {task.status.value})"}), 400
+
+        # Reset retry count and re-enqueue
+        timestamp_microseconds = int(task.submitted_at.timestamp() * 1000000) % 1000000
+        score = task.priority * 1000000 + (1000000 - timestamp_microseconds)
+
+        pipe = client.pipeline()
+        pipe.hset(f'task:{task_id}', 'status', 'pending')
+        pipe.hset(f'task:{task_id}', 'retry_count', '0')
+        pipe.hset(f'task:{task_id}', 'worker_id', '')
+        pipe.hset(f'task:{task_id}', 'started_at', '')
+        pipe.hset(f'task:{task_id}', 'completed_at', '')
+        pipe.hset(f'task:{task_id}', 'error', '')
+        pipe.zadd('tasks:pending', {task_id: score})
+        pipe.zrem('tasks:dead', task_id)
+        pipe.execute()
+
+        logger.info(f"Task {task_id} manually retried from DLQ")
+        return jsonify({"task_id": task_id, "status": "pending"}), 200
+
+    except (redis.ConnectionError, redis.TimeoutError) as e:
+        logger.error(f"Redis connection error in retry_dead_task: {e}")
+        return jsonify({"error": "Service temporarily unavailable"}), 503
+
+    except Exception as e:
+        logger.error(f"Unexpected error in retry_dead_task: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/metrics', methods=['GET'])
+def metrics():
+    """Prometheus metrics endpoint"""
+    try:
+        client = redis_client.get_client()
+        QUEUE_DEPTH.set(client.zcard('tasks:pending'))
+        DLQ_DEPTH.set(client.zcard('tasks:dead'))
+    except Exception:
+        pass  # Emit stale metrics rather than failing the scrape
+    return Response(generate_latest(registry), mimetype=CONTENT_TYPE_LATEST)
 
 
 @app.route('/health', methods=['GET'])
