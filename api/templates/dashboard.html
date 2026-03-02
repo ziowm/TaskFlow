@@ -467,11 +467,32 @@
         <div class="form-group">
           <label>Task Type</label>
           <select id="task-type">
-            <option value="math">math</option>
-            <option value="data_processing">data_processing</option>
-            <option value="text_processing">text_processing</option>
-            <option value="error_demo">error_demo</option>
-            <option value="default">default</option>
+            <optgroup label="── Math">
+              <option value="math">math</option>
+              <option value="fibonacci">fibonacci</option>
+              <option value="prime_check">prime_check</option>
+              <option value="matrix_multiply">matrix_multiply</option>
+            </optgroup>
+            <optgroup label="── Data">
+              <option value="data_processing">data_processing</option>
+              <option value="sort">sort</option>
+            </optgroup>
+            <optgroup label="── Text">
+              <option value="text_processing">text_processing</option>
+            </optgroup>
+            <optgroup label="── Simulated">
+              <option value="send_email">send_email</option>
+              <option value="resize_image">resize_image</option>
+              <option value="generate_report">generate_report</option>
+            </optgroup>
+            <optgroup label="── Chaos">
+              <option value="random_fail">random_fail</option>
+              <option value="slow_task">slow_task</option>
+              <option value="error_demo">error_demo</option>
+            </optgroup>
+            <optgroup label="── Other">
+              <option value="default">default</option>
+            </optgroup>
           </select>
         </div>
         <div class="form-group">
@@ -564,9 +585,23 @@
 
   // ── Default payloads ─────────────────────────────────
   const defaultPayloads = {
-    math:            '{"operation": "add", "a": 5, "b": 3}',
-    data_processing: '{"data": [1,2,3,4,5], "operation": "average"}',
-    text_processing: '{"text": "Hello TaskFlow", "operation": "uppercase"}',
+    // math
+    math:            '{"operation": "add", "a": 12, "b": 7}',
+    fibonacci:       '{"n": 10}',
+    prime_check:     '{"n": 97}',
+    matrix_multiply: '{"a": [[1,2],[3,4]], "b": [[5,6],[7,8]]}',
+    // data
+    data_processing: '{"data": [4, 8, 15, 16, 23, 42], "operation": "average"}',
+    sort:            '{"data": [64, 34, 25, 12, 22, 11, 90], "algorithm": "merge"}',
+    // text
+    text_processing: '{"text": "TaskFlow distributed task scheduler", "operation": "word_frequency"}',
+    // simulated
+    send_email:      '{"to": "user@example.com", "subject": "Hello from TaskFlow", "body": "Your job finished."}',
+    resize_image:    '{"filename": "photo.jpg", "width": 800, "height": 600}',
+    generate_report: '{"report_type": "sales", "period": "monthly"}',
+    // chaos
+    random_fail:     '{"fail_rate": 0.6}',
+    slow_task:       '{"duration_seconds": 5}',
     error_demo:      '{"error_type": "none"}',
     default:         '{"message": "hello"}',
   };

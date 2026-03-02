@@ -19,9 +19,18 @@ from shared.metrics import TASKS_TOTAL, TASK_DURATION
 from worker.timeout_monitor import TimeoutMonitor
 from worker.task_handlers import (
     execute_math_operation,
+    execute_fibonacci,
+    execute_prime_check,
+    execute_matrix_multiply,
     execute_data_processing,
+    execute_sort,
     execute_text_processing,
-    execute_task_with_error_demo
+    execute_send_email,
+    execute_resize_image,
+    execute_generate_report,
+    execute_random_fail,
+    execute_slow_task,
+    execute_error_demo,
 )
 
 
@@ -163,26 +172,39 @@ class WorkerNode:
         
         # Route to appropriate handler based on task_type
         task_type = payload.get('task_type', 'default')
-        
+
         try:
             if task_type == 'math':
                 result = execute_math_operation(payload)
+            elif task_type == 'fibonacci':
+                result = execute_fibonacci(payload)
+            elif task_type == 'prime_check':
+                result = execute_prime_check(payload)
+            elif task_type == 'matrix_multiply':
+                result = execute_matrix_multiply(payload)
             elif task_type == 'data_processing':
                 result = execute_data_processing(payload)
+            elif task_type == 'sort':
+                result = execute_sort(payload)
             elif task_type == 'text_processing':
                 result = execute_text_processing(payload)
+            elif task_type == 'send_email':
+                result = execute_send_email(payload)
+            elif task_type == 'resize_image':
+                result = execute_resize_image(payload)
+            elif task_type == 'generate_report':
+                result = execute_generate_report(payload)
+            elif task_type == 'random_fail':
+                result = execute_random_fail(payload)
+            elif task_type == 'slow_task':
+                result = execute_slow_task(payload)
             elif task_type == 'error_demo':
-                result = execute_task_with_error_demo(payload)
+                result = execute_error_demo(payload)
             elif task_type == 'default':
-                # Default handler: echo payload with metadata
                 time.sleep(0.1)
-                result = {
-                    "status": "processed",
-                    "input": payload,
-                    "processed_by": self.worker_id
-                }
+                result = {"status": "processed", "input": payload, "processed_by": self.worker_id}
             else:
-                raise ValueError(f"Unknown task_type: {task_type}")
+                raise ValueError(f"Unknown task_type: '{task_type}'")
             
             # Add worker metadata to result
             result['processed_by'] = self.worker_id
