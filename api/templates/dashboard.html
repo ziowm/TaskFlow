@@ -567,6 +567,7 @@
       <span id="health-text">connecting...</span>
     </div>
     <span class="refresh-label" id="refresh-label">—</span>
+    <button class="help-btn" id="api-btn" onclick="toggleApi()">⌨ api setup</button>
     <button class="help-btn" id="help-btn" onclick="toggleHelp()">? help</button>
   </div>
 </header>
@@ -704,6 +705,205 @@
       <div class="help-tip"><span class="help-tip-icon">·</span><span><code>GET /metrics</code> — Prometheus metrics</span></div>
       <div class="help-tip"><span class="help-tip-icon">·</span><span><a class="help-link" href="https://github.com/ziowm/TaskFlow" target="_blank">github.com/ziowm/TaskFlow</a> — source code</span></div>
     </div>
+  </div>
+</div>
+
+<!-- API Setup drawer -->
+<div class="help-overlay" id="api-overlay" onclick="closeApiOnOverlay(event)">
+  <div class="help-drawer">
+    <button class="help-close" onclick="toggleApi()">✕</button>
+    <div class="help-title">API Setup</div>
+    <div class="help-sub">
+      Run TaskFlow locally or integrate it into your own project.
+      The REST API accepts JSON and works with any HTTP client — curl, Postman, fetch, requests, whatever you prefer.
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Run locally with Docker</div>
+      <div class="help-tip"><span class="help-tip-icon">①</span><span>Clone the repo and start everything with one command.</span></div>
+      <div class="help-task">
+        <div class="help-task-example">git clone https://github.com/ziowm/TaskFlow.git
+cd TaskFlow
+docker-compose up</div>
+      </div>
+      <div class="help-tip" style="margin-top:10px"><span class="help-tip-icon">②</span><span>That starts Redis, the API on <code>http://localhost:8080</code>, and 3 worker replicas. Open <code>http://localhost:8080</code> for this dashboard.</span></div>
+      <div class="help-tip"><span class="help-tip-icon">③</span><span>Scale workers up or down:</span></div>
+      <div class="help-task">
+        <div class="help-task-example">docker-compose up --scale worker=10</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Submit a task</div>
+      <div class="help-task">
+        <div class="help-task-name">POST /tasks</div>
+        <div class="help-task-desc">Queue a new task. Returns a task_id you can poll for status.</div>
+        <div class="help-task-example">curl -X POST https://taskflow-api-moiz.fly.dev/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payload": {
+      "task_type": "math",
+      "operation": "add",
+      "a": 10,
+      "b": 5
+    },
+    "priority": 5
+  }'</div>
+      </div>
+      <div class="help-task" style="margin-top:10px">
+        <div class="help-task-name">Response</div>
+        <div class="help-task-example">{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending"
+}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Check task status</div>
+      <div class="help-task">
+        <div class="help-task-name">GET /tasks/:id</div>
+        <div class="help-task-desc">Poll this until status is "completed" or "failed". Result is in the result field.</div>
+        <div class="help-task-example">curl https://taskflow-api-moiz.fly.dev/tasks/550e8400-...</div>
+      </div>
+      <div class="help-task" style="margin-top:10px">
+        <div class="help-task-name">Completed response</div>
+        <div class="help-task-example">{
+  "task_id": "550e8400-...",
+  "status": "completed",
+  "priority": 5,
+  "submitted_at": "2026-03-02T11:00:00",
+  "started_at":   "2026-03-02T11:00:01",
+  "completed_at": "2026-03-02T11:00:01",
+  "worker_id": "worker-abc123",
+  "result": {"operation": "add", "a": 10, "b": 5, "result": 15}
+}</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Dead letter queue</div>
+      <div class="help-task">
+        <div class="help-task-name">GET /tasks/dead</div>
+        <div class="help-task-desc">Lists all tasks that exceeded max retries (3 by default).</div>
+        <div class="help-task-example">curl https://taskflow-api-moiz.fly.dev/tasks/dead</div>
+      </div>
+      <div class="help-task" style="margin-top:10px">
+        <div class="help-task-name">POST /tasks/:id/retry</div>
+        <div class="help-task-desc">Replays a dead task — resets retry count and puts it back in the queue.</div>
+        <div class="help-task-example">curl -X POST https://taskflow-api-moiz.fly.dev/tasks/550e8400-.../retry</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Other endpoints</div>
+      <div class="help-task">
+        <div class="help-task-name">GET /stats</div>
+        <div class="help-task-desc">Live queue counts straight from Redis.</div>
+        <div class="help-task-example">curl https://taskflow-api-moiz.fly.dev/stats
+
+# Response:
+{
+  "queue_depth": 3,
+  "processing": 1,
+  "completed": 42,
+  "failed": 2,
+  "dead": 1,
+  "dlq_depth": 1
+}</div>
+      </div>
+      <div class="help-task" style="margin-top:10px">
+        <div class="help-task-name">GET /health</div>
+        <div class="help-task-desc">Health check — confirms API and Redis are up.</div>
+        <div class="help-task-example">curl https://taskflow-api-moiz.fly.dev/health</div>
+      </div>
+      <div class="help-task" style="margin-top:10px">
+        <div class="help-task-name">GET /metrics</div>
+        <div class="help-task-desc">Prometheus-format metrics. Scrape this with a Prometheus instance or paste into Grafana.</div>
+        <div class="help-task-example">curl https://taskflow-api-moiz.fly.dev/metrics</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Use from Python</div>
+      <div class="help-task">
+        <div class="help-task-example">import requests, time
+
+BASE = "https://taskflow-api-moiz.fly.dev"
+
+# Submit
+r = requests.post(f"{BASE}/tasks", json={
+    "payload": {"task_type": "fibonacci", "n": 20},
+    "priority": 5
+})
+task_id = r.json()["task_id"]
+
+# Poll until done
+while True:
+    status = requests.get(f"{BASE}/tasks/{task_id}").json()
+    if status["status"] in ("completed", "failed", "dead"):
+        print(status)
+        break
+    time.sleep(0.5)</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Use from JavaScript</div>
+      <div class="help-task">
+        <div class="help-task-example">const BASE = "https://taskflow-api-moiz.fly.dev";
+
+// Submit
+const { task_id } = await fetch(`${BASE}/tasks`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    payload: { task_type: "prime_check", n: 7919 },
+    priority: 3
+  })
+}).then(r => r.json());
+
+// Poll
+const poll = async () => {
+  const task = await fetch(`${BASE}/tasks/${task_id}`).then(r => r.json());
+  if (["completed","failed","dead"].includes(task.status)) return task;
+  await new Promise(r => setTimeout(r, 500));
+  return poll();
+};
+
+console.log(await poll());</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Add your own task type</div>
+      <div class="help-tip"><span class="help-tip-icon">①</span><span>Add a handler function to <code>worker/task_handlers.py</code>.</span></div>
+      <div class="help-task">
+        <div class="help-task-example">def execute_my_task(payload):
+    value = payload.get("value")
+    if not value:
+        raise ValueError("Missing 'value'")
+    return {"result": value.upper(), "length": len(value)}</div>
+      </div>
+      <div class="help-tip" style="margin-top:10px"><span class="help-tip-icon">②</span><span>Import it and add a route in <code>worker/main.py</code>:</span></div>
+      <div class="help-task">
+        <div class="help-task-example">elif task_type == 'my_task':
+    result = execute_my_task(payload)</div>
+      </div>
+      <div class="help-tip" style="margin-top:10px"><span class="help-tip-icon">③</span><span>Rebuild and redeploy — your new task type is live.</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Environment variables</div>
+      <div class="help-task">
+        <div class="help-task-example">REDIS_URL=redis://localhost:6379   # Redis connection
+API_PORT=8080                      # API server port
+POLL_INTERVAL=1                    # Seconds between worker polls
+TASK_TIMEOUT=300                   # Seconds before stalled task reclaimed
+LOG_LEVEL=INFO                     # DEBUG / INFO / WARNING / ERROR</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1088,11 +1288,30 @@
     document.getElementById('refresh-label').textContent = `refreshed ${ts()}`;
   }
 
+  // ── API Setup panel ───────────────────────────────────
+  function toggleApi() {
+    const overlay = document.getElementById('api-overlay');
+    const btn = document.getElementById('api-btn');
+    const isOpen = overlay.classList.contains('open');
+    // close help if open
+    document.getElementById('help-overlay').classList.remove('open');
+    document.getElementById('help-btn').classList.remove('active');
+    overlay.classList.toggle('open', !isOpen);
+    btn.classList.toggle('active', !isOpen);
+  }
+
+  function closeApiOnOverlay(e) {
+    if (e.target === document.getElementById('api-overlay')) toggleApi();
+  }
+
   // ── Help panel ────────────────────────────────────────
   function toggleHelp() {
     const overlay = document.getElementById('help-overlay');
     const btn = document.getElementById('help-btn');
     const isOpen = overlay.classList.contains('open');
+    // close api if open
+    document.getElementById('api-overlay').classList.remove('open');
+    document.getElementById('api-btn').classList.remove('active');
     overlay.classList.toggle('open', !isOpen);
     btn.classList.toggle('active', !isOpen);
   }
@@ -1103,8 +1322,8 @@
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      const overlay = document.getElementById('help-overlay');
-      if (overlay.classList.contains('open')) toggleHelp();
+      if (document.getElementById('help-overlay').classList.contains('open')) toggleHelp();
+      if (document.getElementById('api-overlay').classList.contains('open')) toggleApi();
     }
   });
 
